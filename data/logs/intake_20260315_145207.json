@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "job_id": "20260315_145207",
+    "parsed_at": "2026-03-15T14:52:07.690499",
+    "parser_version": "2.0.0",
+    "llm_provider": "none"
+  },
+  "classification": {
+    "job_type": "other",
+    "jurisdiction": "Australia_AS",
+    "confidence": "medium"
+  },
+  "required_codes": {
+    "source": "manual_required",
+    "codes": [],
+    "confidence": 0.0,
+    "requires_human_verification": true,
+    "notes": [
+      "No codes identified. Engineer must research applicable standards."
+    ],
+    "uncertainties": [
+      "Automated resolver could not identify applicable codes"
+    ],
+    "audit_metadata": {
+      "resolved_at": "2026-03-15T14:52:07.690560",
+      "jurisdiction_input": "Australia_AS",
+      "job_type_input": "other",
+      "confidence_threshold": 0.7,
+      "llm_provider": "none"
+    }
+  },
+  "requirements": {
+    "deliverables": [
+      "other"
+    ],
+    "required_inputs_missing": [
+      "project location/address",
+      "applicable building codes/local amendments"
+    ],
+    "licensing": {
+      "requires_license": false,
+      "license_type": "Registered Professional Engineer of Queensland (RPEQ) or equivalent",
+      "jurisdiction": "Australia_AS",
+      "note": "Verify with local engineering board before bidding"
+    }
+  },
+  "risk_assessment": {
+    "flags": [
+      "No major risk flags detected"
+    ],
+    "overall_risk": "low"
+  },
+  "next_actions": {
+    "clarifying_questions": [
+      "No clarifying questions at this time."
+    ],
+    "recommended_first_step": "Send clarifying questions to client to finalize scope"
+  },
+  "raw_excerpt": "Test job for audit log verification",
+  "compliance": {
+    "human_verification_required": true,
+    "ai_assisted": false,
+    "disclaimer": "This output is AI-assisted and requires verification by a licensed Professional Engineer before use in any engineering design, permit submission, or construction activity."
+  }
+}

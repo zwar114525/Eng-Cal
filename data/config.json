@@ -1,0 +1,22 @@
+{
+  "llm": {
+    "provider": "openai",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key": "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",
+    "model": "openai/gpt-oss-120b:free"
+  },
+  "engineering": {
+    "default_safety_factor": 2.5,
+    "default_concrete_grade": "M25",
+    "default_steel_grade": "Fe415"
+  },
+  "compliance": {
+    "require_audit_log": true,
+    "require_human_approval": true,
+    "engineer_name": "",
+    "engineer_license": ""
+  },
+  "code_resolver": {
+    "confidence_threshold": 0.7
+  }
+}

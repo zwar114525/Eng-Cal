@@ -1,0 +1,107 @@
+{
+  "meta": {
+    "job_id": "20260315_153448",
+    "parsed_at": "2026-03-15T15:34:48.668230",
+    "parser_version": "2.0.0",
+    "llm_provider": "openai"
+  },
+  "classification": {
+    "job_type": "slab_beam_column",
+    "jurisdiction": "USA_ACI",
+    "confidence": "high"
+  },
+  "required_codes": {
+    "source": "database",
+    "codes": [
+      {
+        "code_id": "ACI_318",
+        "title": "Building Code Requirements for Structural Concrete",
+        "scope": "Concrete design, reinforcement, durability, seismic provisions",
+        "priority": "primary",
+        "edition": "19",
+        "parts": [],
+        "source_url": "https://www.concrete.org",
+        "alternatives": [],
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      },
+      {
+        "code_id": "ASCE_7",
+        "title": "Minimum Design Loads and Associated Criteria for Buildings and Other Structures",
+        "scope": "Dead, live, wind, snow, seismic, flood loads",
+        "priority": "secondary",
+        "edition": "22",
+        "parts": [],
+        "source_url": "https://ascelibrary.org",
+        "alternatives": [],
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      },
+      {
+        "code_id": "ACI_315",
+        "title": "Details and Detailing of Concrete Reinforcement",
+        "scope": "Reinforcement drafting standards, bar scheduling",
+        "priority": "secondary",
+        "edition": "latest",
+        "parts": [],
+        "source_url": "https://www.concrete.org",
+        "alternatives": [],
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      }
+    ],
+    "confidence": 0.9,
+    "requires_human_verification": true,
+    "notes": [
+      "Codes matched from curated database"
+    ],
+    "uncertainties": [],
+    "audit_metadata": {
+      "resolved_at": "2026-03-15T15:34:48.668556",
+      "jurisdiction_input": "USA_ACI",
+      "job_type_input": "slab_beam_column",
+      "confidence_threshold": 0.7,
+      "llm_provider": "openai"
+    }
+  },
+  "requirements": {
+    "deliverables": [
+      "dwg_file",
+      "excel_calculations",
+      "pe_stamped"
+    ],
+    "required_inputs_missing": [
+      "project location/address",
+      "live load requirements (occupancy type)"
+    ],
+    "licensing": {
+      "requires_license": true,
+      "license_type": "Professional Engineer (PE) - State Licensed",
+      "jurisdiction": "USA_ACI",
+      "note": "Verify with local engineering board before bidding"
+    }
+  },
+  "risk_assessment": {
+    "flags": [
+      "Budget may be insufficient for scope complexity",
+      "Missing critical inputs: live load requirements (occupancy type)",
+      "License required - ensure you hold appropriate credential"
+    ],
+    "overall_risk": "high"
+  },
+  "next_actions": {
+    "clarifying_questions": [
+      "What are the design load values (dead/live/wind/seismic)?"
+    ],
+    "recommended_first_step": "Clarify design loads and load combinations"
+  },
+  "raw_excerpt": "Stamped Foundation Design, Steel Building\n打开\n\n已发布大约 14 小时前\n\n•\n\n在6天之内结束\n\n$250-750 USD\n货到付款\n\nI have permit-ready architectural drawings for a steel building complex in Alabama and now need the foundation portion engineered, detailed, and sealed by a Professional Engineer licensed in the state.\n\nThe structure includes:\n• 65' × 130' enclosed storage / shop area built in pre-engineered steel\n• 65' × 16' open lean-to on one gable end\n• 37' × 70' steel frame living quarters attached to one side of the ",
+  "compliance": {
+    "human_verification_required": true,
+    "ai_assisted": true,
+    "disclaimer": "This output is AI-assisted and requires verification by a licensed Professional Engineer before use in any engineering design, permit submission, or construction activity."
+  }
+}

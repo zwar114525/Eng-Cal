@@ -1,0 +1,14 @@
+# Core dependencies
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+
+# LLM clients
+openai>=1.0.0
+anthropic>=0.18.0
+
+# Web UI
+streamlit>=1.28.0
+
+# Development
+pytest>=7.0.0
+pytest-cov>=4.0.0

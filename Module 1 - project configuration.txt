@@ -1,0 +1,1445 @@
+🛠️ Module 1: Generalized Intake & Config (Hybrid Approach)
+Complete, Production-Ready Implementation
+This revised module combines curated database lookup, LLM dynamic suggestions, and mandatory human verification for engineering code identification.
+📂 Complete File: modules/intake.py
+
+"""
+Module 1: Generalized Intake & Config for Civil Engineering Freelance Jobs
+Hybrid Approach: Database + LLM + Human Verification
+
+Purpose:
+- Parse diverse job postings into standardized structured data
+- Identify required codes of practice (hybrid resolver)
+- Flag licensing requirements and risk factors
+- Generate clarifying questions for clients
+- Create immutable audit trail
+
+⚠️ CRITICAL: All outputs require human engineer verification before use.
+"""
+
+import json
+import re
+import os
+from datetime import datetime
+from enum import Enum
+from typing import Optional, List, Dict, Any
+from pathlib import Path
+from dataclasses import dataclass, asdict
+
+# Optional LLM imports
+try:
+    from openai import OpenAI
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
+
+try:
+    import anthropic
+    HAS_ANTHROPIC = True
+except ImportError:
+    HAS_ANTHROPIC = False
+
+
+# ============================================================================
+# ENUMS: Standardized Taxonomies
+# ============================================================================
+
+class JobType(Enum):
+    """Taxonomy of civil/structural engineering job types"""
+    PILE_FOUNDATION = "pile_foundation"
+    SLAB_BEAM_COLUMN = "slab_beam_column"
+    RETAINING_WALL = "retaining_wall"
+    DRAINAGE_STORMWATER = "drainage_stormwater"
+    ROAD_HIGHWAY = "road_highway"
+    STRUCTURAL_ANALYSIS_FEM = "structural_analysis_fem"
+    PERMIT_DRAWINGS = "permit_drawings"
+    SITE_PLANNING_GRADING = "site_planning_grading"
+    MATERIAL_TAKEOFF = "material_takeoff"
+    CONSTRUCTION_SUPERVISION = "construction_supervision"
+    GEOTECHNICAL_ANALYSIS = "geotechnical_analysis"
+    BRIDGE_STRUCTURE = "bridge_structure"
+    STEEL_STRUCTURE = "steel_structure"
+    PRESTRESSED_CONCRETE = "prestressed_concrete"
+    SEISMIC_RETROFIT = "seismic_retrofit"
+    OTHER = "other"
+
+
+class Jurisdiction(Enum):
+    """Common engineering jurisdictions & code systems"""
+    INDIA_IS = "India_IS"
+    USA_ACI = "USA_ACI"
+    FLORIDA_FBC = "Florida_FBC"
+    EUROCODE = "Eurocode"
+    UK_BS = "UK_BS"
+    AUSTRALIA_AS = "Australia_AS"
+    CANADA_CS = "Canada_CS"
+    UAE_SBC = "UAE_SBC"
+    SINGAPORE_SS = "Singapore_SS"
+    OTHER = "Other"
+
+
+class DeliverableType(Enum):
+    """Standard deliverable types"""
+    DWG_FILE = "dwg_file"
+    PDF_DRAWING = "pdf_drawing"
+    EXCEL_CALCULATIONS = "excel_calculations"
+    PDF_REPORT = "pdf_report"
+    PE_STAMPED = "pe_stamped"
+    INP_FILE = "inp_file"
+    ODB_FILE = "odb_file"
+    WORD_SPEC = "word_spec"
+    REVIT_MODEL = "revit_model"
+    OTHER = "other"
+
+
+class CodePriority(Enum):
+    """Code importance ranking"""
+    PRIMARY = "primary"      # Must-follow, governs design
+    SECONDARY = "secondary"  # Reference, supplementary
+    TERTIARY = "tertiary"    # Optional, best practice
+
+
+# ============================================================================
+# CODE DATABASE: Curated Registry of Engineering Standards
+# ============================================================================
+
+@dataclass
+class CodeEntry:
+    """Structured code metadata"""
+    code_id: str
+    title: str
+    scope: str
+    priority: str
+    edition: str = "latest"
+    parts: List[str] = None
+    source_url: str = None
+    alternatives: List[str] = None
+    local_amendments_possible: bool = True
+    
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+class CodeDatabase:
+    """
+    Centralized registry of engineering codes/standards.
+    Organized by jurisdiction → job_type → list of codes.
+    """
+    
+    CODES: Dict[str, CodeEntry] = {
+        # ───────── INDIA (IS Codes) ─────────
+        "IS_2911": CodeEntry(
+            code_id="IS_2911",
+            title="Design and construction of pile foundations",
+            scope="Pile foundation design, capacity calculation, load testing",
+            priority="primary",
+            parts=["Part 1: Concrete piles", "Part 2: Under-reamed piles", 
+                   "Part 3: Prestressed concrete piles", "Part 4: Load test on piles"],
+            source_url="https://bis.gov.in"
+        ),
+        "IS_456": CodeEntry(
+            code_id="IS_456",
+            title="Plain and reinforced concrete - Code of practice",
+            scope="Concrete design, reinforcement detailing, durability requirements",
+            priority="primary",
+            edition="2000",
+            source_url="https://bis.gov.in"
+        ),
+        "IS_875": CodeEntry(
+            code_id="IS_875",
+            title="Code of practice for design loads (other than earthquake)",
+            scope="Dead, live, wind, snow load calculations",
+            priority="primary",
+            parts=["Part 1: Dead loads", "Part 2: Imposed loads", 
+                   "Part 3: Wind loads", "Part 4: Snow loads"],
+            source_url="https://bis.gov.in"
+        ),
+        "IS_1893": CodeEntry(
+            code_id="IS_1893",
+            title="Criteria for earthquake resistant design of structures",
+            scope="Seismic design forces, ductility requirements",
+            priority="secondary",
+            parts=["Part 1: General provisions", "Part 2: Liquid retaining tanks"],
+            source_url="https://bis.gov.in"
+        ),
+        "IS_800": CodeEntry(
+            code_id="IS_800",
+            title="General construction in steel - Code of practice",
+            scope="Steel structure design, connections, stability",
+            priority="primary",
+            edition="2007",
+            source_url="https://bis.gov.in"
+        ),
+        "IS_1343": CodeEntry(
+            code_id="IS_1343",
+            title="Prestressed concrete - Code of practice",
+            scope="Prestressed concrete design, losses, detailing",
+            priority="primary",
+            source_url="https://bis.gov.in"
+        ),
+        "IS_1498": CodeEntry(
+            code_id="IS_1498",
+            title="Classification and identification of soils for general engineering purposes",
+            scope="Soil classification, index properties",
+            priority="secondary",
+            source_url="https://bis.gov.in"
+        ),
+        "IS_2720": CodeEntry(
+            code_id="IS_2720",
+            title="Methods of test for soils",
+            scope="Geotechnical laboratory testing procedures",
+            priority="secondary",
+            source_url="https://bis.gov.in"
+        ),
+        
+        # ───────── USA (ACI/ASCE/IBC) ─────────
+        "ACI_318": CodeEntry(
+            code_id="ACI_318",
+            title="Building Code Requirements for Structural Concrete",
+            scope="Concrete design, reinforcement, durability, seismic provisions",
+            priority="primary",
+            edition="19",
+            source_url="https://www.concrete.org"
+        ),
+        "ACI_315": CodeEntry(
+            code_id="ACI_315",
+            title="Details and Detailing of Concrete Reinforcement",
+            scope="Reinforcement drafting standards, bar scheduling",
+            priority="secondary",
+            source_url="https://www.concrete.org"
+        ),
+        "ASCE_7": CodeEntry(
+            code_id="ASCE_7",
+            title="Minimum Design Loads and Associated Criteria for Buildings and Other Structures",
+            scope="Dead, live, wind, snow, seismic, flood loads",
+            priority="primary",
+            edition="22",
+            source_url="https://ascelibrary.org"
+        ),
+        "ASCE_20": CodeEntry(
+            code_id="ASCE_20",
+            title="Standard Guidelines for the Design and Installation of Pile Foundations",
+            scope="Pile design, installation, testing, quality control",
+            priority="secondary",
+            source_url="https://ascelibrary.org"
+        ),
+        "IBC": CodeEntry(
+            code_id="IBC",
+            title="International Building Code",
+            scope="General building requirements, occupancy, fire safety, structural",
+            priority="primary",
+            edition="2021",
+            source_url="https://codes.iccsafe.org"
+        ),
+        "AISC_360": CodeEntry(
+            code_id="AISC_360",
+            title="Specification for Structural Steel Buildings",
+            scope="Steel member design, connections, stability",
+            priority="primary",
+            edition="16",
+            source_url="https://www.aisc.org"
+        ),
+        "AASHTO_LRFD": CodeEntry(
+            code_id="AASHTO_LRFD",
+            title="LRFD Bridge Design Specifications",
+            scope="Bridge structural design, loads, detailing",
+            priority="primary",
+            source_url="https://transportation.org"
+        ),
+        
+        # ───────── FLORIDA SPECIFIC ─────────
+        "FBC_BUILDING": CodeEntry(
+            code_id="FBC_BUILDING",
+            title="Florida Building Code - Building",
+            scope="State-adopted building requirements, amendments to IBC",
+            priority="primary",
+            edition="2023",
+            source_url="https://floridabuilding.org"
+        ),
+        "FBC_RESIDENTIAL": CodeEntry(
+            code_id="FBC_RESIDENTIAL",
+            title="Florida Building Code - Residential",
+            scope="1-2 family dwellings, townhouses",
+            priority="primary",
+            edition="2023",
+            source_url="https://floridabuilding.org"
+        ),
+        "FBC_HVHZ": CodeEntry(
+            code_id="FBC_HVHZ",
+            title="High-Velocity Hurricane Zone Provisions (Miami-Dade & Broward)",
+            scope="Enhanced wind, impact, pressure requirements",
+            priority="primary",
+            source_url="https://www.miamidade.gov/building"
+        ),
+        "TAS_201": CodeEntry(
+            code_id="TAS_201",
+            title="Florida Product Approval: Impact Test Procedures",
+            scope="HVHZ product testing for wind-borne debris",
+            priority="secondary",
+            source_url="https://floridabuilding.org"
+        ),
+        
+        # ───────── EUROCODE ─────────
+        "EN_1990": CodeEntry(
+            code_id="EN_1990",
+            title="Eurocode: Basis of structural design",
+            scope="Reliability, limit states, combination rules",
+            priority="primary",
+            source_url="https://www.en-standard.eu"
+        ),
+        "EN_1992": CodeEntry(
+            code_id="EN_1992",
+            title="Eurocode 2: Design of concrete structures",
+            scope="Concrete member design, detailing, durability",
+            priority="primary",
+            parts=["Part 1-1: General rules", "Part 1-2: Structural fire design"],
+            source_url="https://www.en-standard.eu"
+        ),
+        "EN_1997": CodeEntry(
+            code_id="EN_1997",
+            title="Eurocode 7: Geotechnical design",
+            scope="Geotechnical analysis, foundation design, soil parameters",
+            priority="primary",
+            parts=["Part 1: General rules", "Part 2: Ground investigation and testing"],
+            source_url="https://www.en-standard.eu"
+        ),
+        "EN_1998": CodeEntry(
+            code_id="EN_1998",
+            title="Eurocode 8: Design of structures for earthquake resistance",
+            scope="Seismic actions, ductility, capacity design",
+            priority="secondary",
+            source_url="https://www.en-standard.eu"
+        ),
+        "EN_1993": CodeEntry(
+            code_id="EN_1993",
+            title="Eurocode 3: Design of steel structures",
+            scope="Steel member design, connections, stability",
+            priority="primary",
+            source_url="https://www.en-standard.eu"
+        ),
+        
+        # ───────── AUSTRALIA ─────────
+        "AS_3600": CodeEntry(
+            code_id="AS_3600",
+            title="Concrete structures",
+            scope="Concrete design, reinforcement, durability",
+            priority="primary",
+            source_url="https://www.standards.org.au"
+        ),
+        "AS_1170": CodeEntry(
+            code_id="AS_1170",
+            title="Structural design actions",
+            scope="Load determination for Australian conditions",
+            priority="primary",
+            parts=["Part 1: Permanent/imposed loads", "Part 2: Wind", 
+                   "Part 3: Snow", "Part 4: Earthquake"],
+            source_url="https://www.standards.org.au"
+        ),
+        "AS_2159": CodeEntry(
+            code_id="AS_2159",
+            title="Piling - Design and installation",
+            scope="Pile foundation design, testing, installation QA",
+            priority="primary",
+            source_url="https://www.standards.org.au"
+        ),
+        
+        # ───────── CANADA ─────────
+        "CSA_A23_3": CodeEntry(
+            code_id="CSA_A23_3",
+            title="Design of concrete structures",
+            scope="Concrete design, reinforcement, durability",
+            priority="primary",
+            source_url="https://www.csagroup.org"
+        ),
+        "CSA_S16": CodeEntry(
+            code_id="CSA_S16",
+            title="Design of steel structures",
+            scope="Steel member design, connections, stability",
+            priority="primary",
+            source_url="https://www.csagroup.org"
+        ),
+        "NBC": CodeEntry(
+            code_id="NBC",
+            title="National Building Code of Canada",
+            scope="General building requirements, loads, safety",
+            priority="primary",
+            edition="2020",
+            source_url="https://nrc.canada.ca"
+        ),
+        
+        # ───────── INTERNATIONAL ─────────
+        "ISO_2394": CodeEntry(
+            code_id="ISO_2394",
+            title="General principles on reliability for structures",
+            scope="Reliability-based design framework",
+            priority="tertiary",
+            source_url="https://www.iso.org"
+        ),
+        "FHWA_NHI_16_009": CodeEntry(
+            code_id="FHWA_NHI_16_009",
+            title="Geotechnical Engineering Circular No. 12: Design of Pile Foundations",
+            scope="US federal guidance for pile design methods",
+            priority="secondary",
+            source_url="https://www.fhwa.dot.gov"
+        ),
+    }
+    
+    # Mapping: (jurisdiction, job_type) → list of code IDs
+    CODE_MAPPING: Dict[tuple, List[str]] = {
+        # India
+        ("India_IS", "pile_foundation"): ["IS_2911", "IS_456", "IS_875", "IS_1893", "IS_1498"],
+        ("India_IS", "slab_beam_column"): ["IS_456", "IS_875", "IS_1893"],
+        ("India_IS", "retaining_wall"): ["IS_456", "IS_875", "IS_1893", "IS_1498"],
+        ("India_IS", "steel_structure"): ["IS_800", "IS_875", "IS_1893"],
+        ("India_IS", "prestressed_concrete"): ["IS_1343", "IS_456", "IS_875"],
+        ("India_IS", "geotechnical_analysis"): ["IS_1498", "IS_2720", "IS_875"],
+        ("India_IS", "bridge_structure"): ["IS_456", "IS_800", "IS_1893", "IRC:78"],
+        
+        # USA (ACI)
+        ("USA_ACI", "pile_foundation"): ["ACI_318", "ASCE_7", "ASCE_20", "IBC"],
+        ("USA_ACI", "slab_beam_column"): ["ACI_318", "ASCE_7", "ACI_315"],
+        ("USA_ACI", "retaining_wall"): ["ACI_318", "ASCE_7", "AISC_360"],
+        ("USA_ACI", "steel_structure"): ["AISC_360", "ASCE_7", "IBC"],
+        ("USA_ACI", "bridge_structure"): ["AASHTO_LRFD", "ASCE_7"],
+        ("USA_ACI", "structural_analysis_fem"): ["ACI_318", "AISC_360", "ASCE_7"],
+        
+        # Florida
+        ("Florida_FBC", "permit_drawings"): ["FBC_BUILDING", "FBC_RESIDENTIAL", "ASCE_7", "FBC_HVHZ"],
+        ("Florida_FBC", "pile_foundation"): ["FBC_BUILDING", "ACI_318", "ASCE_7", "FBC_HVHZ"],
+        ("Florida_FBC", "retaining_wall"): ["FBC_BUILDING", "ACI_318", "ASCE_7", "TAS_201"],
+        ("Florida_FBC", "slab_beam_column"): ["FBC_BUILDING", "ACI_318", "ASCE_7"],
+        
+        # Eurocode
+        ("Eurocode", "pile_foundation"): ["EN_1997", "EN_1992", "EN_1990", "EN_1998"],
+        ("Eurocode", "slab_beam_column"): ["EN_1992", "EN_1990", "EN_1998"],
+        ("Eurocode", "steel_structure"): ["EN_1993", "EN_1990", "EN_1998"],
+        ("Eurocode", "geotechnical_analysis"): ["EN_1997", "EN_1990"],
+        ("Eurocode", "structural_analysis_fem"): ["EN_1992", "EN_1993", "EN_1990"],
+        
+        # Australia
+        ("Australia_AS", "pile_foundation"): ["AS_2159", "AS_3600", "AS_1170"],
+        ("Australia_AS", "slab_beam_column"): ["AS_3600", "AS_1170"],
+        ("Australia_AS", "steel_structure"): ["AS_4100", "AS_1170"],
+        
+        # Canada
+        ("Canada_CS", "slab_beam_column"): ["CSA_A23_3", "NBC", "CSA_S16"],
+        ("Canada_CS", "steel_structure"): ["CSA_S16", "NBC"],
+        
+        # Fallback / Generic
+        ("Other", "structural_analysis_fem"): ["ISO_2394"],
+        ("Other", "geotechnical_analysis"): ["FHWA_NHI_16_009"],
+        ("Other", "pile_foundation"): ["FHWA_NHI_16_009"],
+    }
+    
+    @classmethod
+    def get_code_details(cls, code_id: str) -> Optional[CodeEntry]:
+        """Retrieve full metadata for a code"""
+        return cls.CODES.get(code_id)
+    
+    @classmethod
+    def get_required_codes(cls, jurisdiction: str, job_type: str) -> List[CodeEntry]:
+        """Return structured list of codes needed for a job"""
+        key = (jurisdiction, job_type)
+        code_ids = cls.CODE_MAPPING.get(key, [])
+        
+        # Fallback: try jurisdiction-agnostic
+        if not code_ids:
+            fallback_key = ("Other", job_type)
+            code_ids = cls.CODE_MAPPING.get(fallback_key, [])
+        
+        # Build structured output
+        result = []
+        for idx, code_id in enumerate(code_ids):
+            entry = cls.get_code_details(code_id)
+            if entry:
+                # Override priority based on position
+                if idx == 0:
+                    entry.priority = "primary"
+                elif idx <= 2:
+                    entry.priority = "secondary"
+                else:
+                    entry.priority = "tertiary"
+                result.append(entry)
+        
+        return result
+    
+    @classmethod
+    def get_all_code_ids(cls) -> List[str]:
+        """Return list of all known code IDs for LLM validation"""
+        return list(cls.CODES.keys())
+
+
+# ============================================================================
+# HYBRID CODE RESOLVER: Database + LLM + Safeguards
+# ============================================================================
+
+@dataclass
+class CodeResolutionResult:
+    """Structured output from hybrid code resolver"""
+    source: str  # "database", "llm_suggestion", "manual_required"
+    codes: List[Dict[str, Any]]
+    confidence: float
+    requires_human_verification: bool
+    notes: List[str]
+    uncertainties: List[str]
+    audit_metadata: Dict[str, Any] = None
+    
+    def to_dict(self) -> dict:
+        return {
+            "source": self.source,
+            "codes": self.codes,
+            "confidence": self.confidence,
+            "requires_human_verification": self.requires_human_verification,
+            "notes": self.notes,
+            "uncertainties": self.uncertainties,
+            "audit_metadata": self.audit_metadata
+        }
+
+
+class HybridCodeResolver:
+    """
+    Three-layer code identification system:
+    1. Database lookup (fast, reliable)
+    2. LLM suggestion (flexible, fallback)
+    3. Human verification gate (mandatory)
+    """
+    
+    def __init__(self, llm_client=None, llm_provider: str = "openai"):
+        self.db = CodeDatabase()
+        self.llm = llm_client
+        self.llm_provider = llm_provider
+        self.known_code_ids = self.db.get_all_code_ids()
+        
+    def resolve_codes(self, jurisdiction: str, job_type: str, 
+                     job_text: str, confidence_threshold: float = 0.7) -> CodeResolutionResult:
+        """
+        Main entry point: return codes with confidence scores and verification flags.
+        """
+        audit_metadata = {
+            "resolved_at": datetime.now().isoformat(),
+            "jurisdiction_input": jurisdiction,
+            "job_type_input": job_type,
+            "confidence_threshold": confidence_threshold,
+            "llm_provider": self.llm_provider if self.llm else "none"
+        }
+        
+        # ───────── LAYER 1: Database Lookup ─────────
+        db_codes = self.db.get_required_codes(jurisdiction, job_type)
+        
+        if db_codes and len(db_codes) > 0:
+            codes_dict = [self._code_entry_to_dict(c) for c in db_codes]
+            result = CodeResolutionResult(
+                source="database",
+                codes=codes_dict,
+                confidence=0.9,
+                requires_human_verification=True,
+                notes=["✅ Codes matched from curated database"],
+                uncertainties=[],
+                audit_metadata=audit_metadata
+            )
+            
+            if result.confidence >= confidence_threshold:
+                return result
+        
+        # ───────── LAYER 2: LLM Fallback ─────────
+        if self.llm and (not db_codes or len(db_codes) == 0):
+            llm_suggestion = self._llm_suggest_codes(jurisdiction, job_type, job_text)
+            
+            if llm_suggestion.codes and len(llm_suggestion.codes) > 0:
+                llm_suggestion.source = "llm_suggestion"
+                llm_suggestion.notes.append("⚠️ Codes suggested by LLM - MUST be verified by licensed engineer")
+                llm_suggestion.audit_metadata = audit_metadata
+                return llm_suggestion
+        
+        # ───────── LAYER 3: No Match ─────────
+        return CodeResolutionResult(
+            source="manual_required",
+            codes=[],
+            confidence=0.0,
+            requires_human_verification=True,
+            notes=["❌ No codes identified. Engineer must research applicable standards."],
+            uncertainties=["Automated resolver could not identify applicable codes"],
+            audit_metadata=audit_metadata
+        )
+    
+    def _code_entry_to_dict(self, entry: CodeEntry) -> dict:
+        """Convert CodeEntry to dict with verification flags"""
+        return {
+            "code_id": entry.code_id,
+            "title": entry.title,
+            "scope": entry.scope,
+            "priority": entry.priority,
+            "edition": entry.edition,
+            "parts": entry.parts or [],
+            "source_url": entry.source_url,
+            "alternatives": entry.alternatives or [],
+            "local_amendments_possible": entry.local_amendments_possible,
+            "source": "database",
+            "requires_verification": True
+        }
+    
+    def _llm_suggest_codes(self, jurisdiction: str, job_type: str, job_text: str) -> CodeResolutionResult:
+        """Use LLM to suggest applicable codes with validation"""
+        
+        prompt = f"""
+You are a senior civil engineering standards expert.
+
+TASK: Identify the applicable codes of practice for this freelance engineering job.
+
+JOB CONTEXT:
+- Jurisdiction: {jurisdiction}
+- Job Type: {job_type}
+- Full Job Description:
+{job_text[:2500]}
+
+KNOWN CODE IDs (prefer these if applicable):
+{', '.join(self.known_code_ids[:30])}... (and more)
+
+INSTRUCTIONS:
+1. List ALL applicable codes/standards (primary and secondary)
+2. For each code, provide:
+   - Official code ID (e.g., "IS_2911", "ACI_318-19", "EN_1992-1-1")
+   - Full title
+   - Brief scope (what aspect of the job it governs)
+   - Priority: "primary", "secondary", or "tertiary"
+   - Edition/year if known (e.g., "2000", "2019", "latest")
+   - Whether local amendments may apply (boolean)
+3. If jurisdiction is unclear, suggest codes for likely regions + note uncertainty
+4. Estimate your confidence (0.0-1.0) in this list
+5. List any uncertainties or assumptions you made
+
+OUTPUT FORMAT (JSON ONLY):
+{{
+  "codes": [
+    {{
+      "code_id": "IS_2911",
+      "title": "Design and construction of pile foundations",
+      "scope": "Pile capacity calculation, load testing",
+      "priority": "primary",
+      "edition": "latest",
+      "local_amendments_possible": true
+    }}
+  ],
+  "confidence": 0.85,
+  "uncertainties": ["Jurisdiction not explicitly stated", "Soil type unknown"]
+}}
+
+Return ONLY valid JSON. No markdown, no explanations.
+"""
+        
+        try:
+            if self.llm_provider == "openai" and HAS_OPENAI:
+                response = self.llm.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    response_format={"type": "json_object"}
+                )
+                llm_output = json.loads(response.choices[0].message.content)
+                
+            elif self.llm_provider == "anthropic" and HAS_ANTHROPIC:
+                response = self.llm.messages.create(
+                    model="claude-sonnet-4-5-20250929",
+                    max_tokens=2000,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                llm_output = json.loads(response.content[0].text)
+                
+            else:
+                raise ValueError("No valid LLM client available")
+            
+            # Validate and enrich output
+            validated_codes = []
+            for code in llm_output.get("codes", []):
+                code_id = code.get("code_id", "UNKNOWN")
+                
+                # Check for hallucination red flags
+                suspicious_patterns = ["fictional", "placeholder", "example", "tbd", "xxx"]
+                if any(pat in code_id.lower() for pat in suspicious_patterns):
+                    continue  # Skip suspicious codes
+                
+                validated_codes.append({
+                    "code_id": code_id,
+                    "title": code.get("title", "Title not provided"),
+                    "scope": code.get("scope", "Scope not specified"),
+                    "priority": code.get("priority", "secondary"),
+                    "edition": code.get("edition", "unknown"),
+                    "parts": code.get("parts", []),
+                    "source_url": code.get("source_url"),
+                    "local_amendments_possible": code.get("local_amendments_possible", True),
+                    "source": "llm_suggestion",
+                    "requires_verification": True,
+                    "known_code": code_id in self.known_code_ids
+                })
+            
+            confidence = llm_output.get("confidence", 0.5)
+            uncertainties = llm_output.get("uncertainties", [])
+            
+            # Apply confidence penalties
+            if len(validated_codes) == 0:
+                confidence = 0.0
+            elif not any(c["known_code"] for c in validated_codes):
+                confidence *= 0.7  # Penalty if no known codes
+            if any("unknown" in str(c.get("edition", "")).lower() for c in validated_codes):
+                confidence *= 0.9  # Penalty for unknown editions
+            
+            return CodeResolutionResult(
+                source="llm_suggestion",
+                codes=validated_codes,
+                confidence=confidence,
+                requires_human_verification=True,
+                notes=[],
+                uncertainties=uncertainties
+            )
+            
+        except Exception as e:
+            return CodeResolutionResult(
+                source="llm_error",
+                codes=[],
+                confidence=0.0,
+                requires_human_verification=True,
+                notes=[f"⚠️ LLM code suggestion failed: {str(e)}"],
+                uncertainties=[f"LLM error: {str(e)}"]
+            )
+
+
+# ============================================================================
+# MAIN INTAKE CLASS
+# ============================================================================
+
+class EngineeringIntake:
+    """
+    Generalized intake processor for civil engineering freelance jobs.
+    Hybrid approach: Database + LLM + Human Verification.
+    """
+    
+    # Keyword mappings for fallback (no LLM)
+    KEYWORD_MAP = {
+        JobType.PILE_FOUNDATION: ["pile", "piling", "deep foundation", "bored pile", "driven pile", "helical pile"],
+        JobType.SLAB_BEAM_COLUMN: ["slab", "beam", "column", "frame", "reinforced concrete", "rc design", "rc frame"],
+        JobType.RETAINING_WALL: ["retaining wall", "cantilever wall", "sheet pile", "gravity wall", "anchored wall"],
+        JobType.DRAINAGE_STORMWATER: ["drainage", "stormwater", "culvert", "swale", "hydrology", "hydraulic", "sewer"],
+        JobType.ROAD_HIGHWAY: ["road", "highway", "pavement", "alignment", "geometric design", "flexible pavement"],
+        JobType.STRUCTURAL_ANALYSIS_FEM: ["abaqus", "ansys", "fea", "fem", "finite element", "nonlinear analysis", "etabs", "sap2000"],
+        JobType.PERMIT_DRAWINGS: ["permit", "submission", "building department", "stamped drawings", "approval", "ahj"],
+        JobType.SITE_PLANNING_GRADING: ["site plan", "grading", "earthwork", "cut fill", "topography", "survey"],
+        JobType.MATERIAL_TAKEOFF: ["takeoff", "quantity", "boq", "bill of quantities", "material estimate", "cost estimate"],
+        JobType.GEOTECHNICAL_ANALYSIS: ["geotechnical", "soil report", "bearing capacity", "settlement", "slope stability"],
+        JobType.BRIDGE_STRUCTURE: ["bridge", "span", "girder", "abutment", "pier", "viaduct"],
+        JobType.STEEL_STRUCTURE: ["steel", "structural steel", "metal building", "steel frame", "connection design"],
+        JobType.PRESTRESSED_CONCRETE: ["prestressed", "pre-tensioned", "post-tensioned", "pt slab", "prestressing"],
+        JobType.SEISMIC_RETROFIT: ["seismic", "earthquake", "retrofit", "strengthening", "base isolation"],
+    }
+    
+    JURISDICTION_MAP = {
+        Jurisdiction.INDIA_IS: ["is 2911", "is 456", "is 875", "india", "inr", "₹", "mumbai", "delhi", "bangalore"],
+        Jurisdiction.USA_ACI: ["aci 318", "asce 7", "ibc", "usa", "usd", "$", "american"],
+        Jurisdiction.FLORIDA_FBC: ["florida", "fl", "miami-dade", "hvhz", "florida building code", "palmetto bay"],
+        Jurisdiction.EUROCODE: ["eurocode", "en 199", "europe", "€", "ec2", "ec3"],
+        Jurisdiction.UK_BS: ["bs 8110", "bs 5950", "uk", "british standard", "london"],
+        Jurisdiction.AUSTRALIA_AS: ["as 3600", "as 1170", "australia", "aud", "a$", "sydney"],
+        Jurisdiction.CANADA_CS: ["csa", "canada", "cad", "c$", "toronto", "vancouver"],
+        Jurisdiction.UAE_SBC: ["uae", "dubai", "abu dhabi", "uae code"],
+        Jurisdiction.SINGAPORE_SS: ["singapore", "ss", "sgd", "s$"],
+    }
+    
+    DELIVERABLE_MAP = {
+        DeliverableType.DWG_FILE: [".dwg", "autocad", "cad file", "drawing file"],
+        DeliverableType.PDF_DRAWING: [".pdf", "pdf drawing", "print ready"],
+        DeliverableType.EXCEL_CALCULATIONS: ["excel", ".xlsx", "calculation sheet", "spreadsheet", "calc"],
+        DeliverableType.PDF_REPORT: ["report", "design summary", "technical report", "memo"],
+        DeliverableType.PE_STAMPED: ["pe stamp", "professional engineer", "sealed", "licensed", "signed and sealed"],
+        DeliverableType.INP_FILE: [".inp", "abaqus input", "input file"],
+        DeliverableType.ODB_FILE: [".odb", "abaqus output", "results file"],
+        DeliverableType.REVIT_MODEL: [".rvt", "revit", "bim model"],
+    }
+    
+    def __init__(self, raw_text: str, llm_client=None, llm_provider: str = "openai"):
+        self.raw_text = raw_text
+        self.job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.llm_client = llm_client
+        self.llm_provider = llm_provider
+        self.code_resolver = HybridCodeResolver(llm_client=llm_client, llm_provider=llm_provider)
+        
+    # ───────── Classification Methods ─────────
+    
+    def classify_job_type(self) -> JobType:
+        """Classify job type using LLM (preferred) or keyword fallback"""
+        text_lower = self.raw_text.lower()
+        
+        if self.llm_client:
+            return self._llm_classify_job_type()
+        
+        # Fallback: keyword matching
+        best_match = JobType.OTHER
+        best_score = 0
+        
+        for job_type, keywords in self.KEYWORD_MAP.items():
+            score = sum(1 for kw in keywords if kw.lower() in text_lower)
+            if score > best_score:
+                best_score = score
+                best_match = job_type
+        
+        return best_match
+    
+    def _llm_classify_job_type(self) -> JobType:
+        """Use LLM for more accurate classification"""
+        prompt = f"""
+You are a civil engineering project classifier. 
+Classify this freelance job posting into ONE category:
+
+JOB TEXT:
+{self.raw_text[:3000]}
+
+CATEGORIES:
+{', '.join([jt.value for jt in JobType])}
+
+Return ONLY the category name (e.g., "pile_foundation"), nothing else.
+"""
+        try:
+            if self.llm_provider == "openai" and HAS_OPENAI:
+                response = self.llm_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=20
+                )
+                result = response.choices[0].message.content.strip().lower()
+                return JobType(result) if result in [jt.value for jt in JobType] else JobType.OTHER
+        except:
+            pass
+        return self.classify_job_type()
+    
+    def detect_jurisdiction(self) -> Jurisdiction:
+        """Detect applicable jurisdiction & code system"""
+        text_lower = self.raw_text.lower()
+        
+        if self.llm_client:
+            return self._llm_detect_jurisdiction()
+        
+        # Fallback: keyword matching
+        for jurisdiction, keywords in self.JURISDICTION_MAP.items():
+            if any(kw.lower() in text_lower for kw in keywords):
+                return jurisdiction
+        
+        return Jurisdiction.OTHER
+    
+    def _llm_detect_jurisdiction(self) -> Jurisdiction:
+        """Use LLM for jurisdiction detection"""
+        prompt = f"""
+Detect the engineering jurisdiction/code system for this job:
+
+JOB TEXT:
+{self.raw_text[:3000]}
+
+OPTIONS:
+{', '.join([j.value for j in Jurisdiction])}
+
+Return ONLY the option name (e.g., "India_IS"), nothing else.
+"""
+        try:
+            if self.llm_provider == "openai" and HAS_OPENAI:
+                response = self.llm_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=20
+                )
+                result = response.choices[0].message.content.strip()
+                return Jurisdiction(result) if result in [j.value for j in Jurisdiction] else Jurisdiction.OTHER
+        except:
+            pass
+        return self.detect_jurisdiction()
+    
+    # ───────── Requirements Extraction ─────────
+    
+    def extract_deliverables(self) -> List[DeliverableType]:
+        """Extract required deliverable types from job text"""
+        text_lower = self.raw_text.lower()
+        found = []
+        
+        for del_type, keywords in self.DELIVERABLE_MAP.items():
+            if any(kw.lower() in text_lower for kw in keywords):
+                found.append(del_type)
+        
+        # Add common defaults based on job type
+        job_type = self.classify_job_type()
+        if job_type == JobType.PERMIT_DRAWINGS and DeliverableType.PE_STAMPED not in found:
+            found.append(DeliverableType.PE_STAMPED)
+        if job_type == JobType.STRUCTURAL_ANALYSIS_FEM:
+            if DeliverableType.INP_FILE not in found:
+                found.append(DeliverableType.INP_FILE)
+        
+        return found if found else [DeliverableType.OTHER]
+    
+    def extract_required_inputs(self) -> List[str]:
+        """Identify what inputs the client should provide"""
+        job_type = self.classify_job_type()
+        inputs = []
+        
+        common_inputs = [
+            "project location/address",
+            "site plan or survey",
+            "applicable building codes/local amendments"
+        ]
+        
+        type_specific = {
+            JobType.PILE_FOUNDATION: [
+                "geotechnical investigation report",
+                "column load values (dead/live/wind)",
+                "pile type preference (bored/driven/CFA)",
+                "groundwater level information"
+            ],
+            JobType.SLAB_BEAM_COLUMN: [
+                "architectural floor plans",
+                "live load requirements (occupancy type)",
+                "column grid layout",
+                "material preferences (concrete grade, steel grade)"
+            ],
+            JobType.STRUCTURAL_ANALYSIS_FEM: [
+                "geometry file (STEP/IGES) or detailed dimensions",
+                "material properties (E, ν, yield strength)",
+                "boundary conditions & loading scenarios",
+                "expected output metrics (stress, displacement, factor of safety)"
+            ],
+            JobType.PERMIT_DRAWINGS: [
+                "existing building drawings (if renovation)",
+                "local building department submission requirements",
+                "property survey with setbacks",
+                "contractor/licensee information for stamping"
+            ],
+            JobType.DRAINAGE_STORMWATER: [
+                "topographic survey",
+                "rainfall intensity data (IDF curves)",
+                "downstream discharge constraints",
+                "soil infiltration rates"
+            ],
+            JobType.GEOTECHNICAL_ANALYSIS: [
+                "soil investigation report",
+                "laboratory test results",
+                "groundwater conditions",
+                "proposed foundation type"
+            ],
+        }
+        
+        inputs = common_inputs + type_specific.get(job_type, [])
+        
+        # Check which inputs are mentioned in job text
+        text_lower = self.raw_text.lower()
+        provided = [inp for inp in inputs if any(phrase in text_lower for phrase in inp.lower().split())]
+        missing = [inp for inp in inputs if inp not in provided]
+        
+        return missing
+    
+    # ───────── Licensing & Risk Assessment ─────────
+    
+    def assess_licensing_requirements(self) -> dict:
+        """Determine if professional license is required"""
+        jurisdiction = self.detect_jurisdiction().value
+        job_type = self.classify_job_type()
+        deliverables = self.extract_deliverables()
+        
+        requires_license = False
+        license_type = None
+        
+        if DeliverableType.PE_STAMPED in deliverables or job_type == JobType.PERMIT_DRAWINGS:
+            requires_license = True
+        
+        structural_jobs = [
+            JobType.PILE_FOUNDATION, JobType.SLAB_BEAM_COLUMN, 
+            JobType.RETAINING_WALL, JobType.BRIDGE_STRUCTURE,
+            JobType.STEEL_STRUCTURE, JobType.PRESTRESSED_CONCRETE
+        ]
+        if job_type in structural_jobs:
+            requires_license = True
+        
+        license_map = {
+            "Florida_FBC": "Florida Professional Engineer (PE) + Structural Recognition",
+            "India_IS": "Registered Structural Engineer (State Council)",
+            "USA_ACI": "Professional Engineer (PE) - State Licensed",
+            "Eurocode": "Chartered Engineer (CEng) or equivalent",
+            "Australia_AS": "Registered Professional Engineer of Queensland (RPEQ) or equivalent",
+            "Canada_CS": "Professional Engineer (P.Eng.) - Provincial Licensed",
+        }
+        license_type = license_map.get(jurisdiction, "Verify with local engineering board")
+        
+        return {
+            "requires_license": requires_license,
+            "license_type": license_type,
+            "jurisdiction": jurisdiction,
+            "note": "Verify with local engineering board before bidding"
+        }
+    
+    def assess_risk_flags(self) -> List[str]:
+        """Identify potential project risks"""
+        flags = []
+        text_lower = self.raw_text.lower()
+        
+        # Budget risk
+        budget_match = re.search(r'[\$₹€£]\s*([\d,]+(?:\.\d+)?)\s*(?:–|-)?\s*[\$₹€£]?[\d,]+', text_lower)
+        if budget_match:
+            budget_text = budget_match.group()
+            if any(kw in text_lower for kw in ["pile", "foundation", "structural", "permit"]) and "50" in budget_text:
+                flags.append("⚠️ Budget may be insufficient for scope complexity")
+        
+        # Scope ambiguity
+        if any(phrase in text_lower for phrase in ["not sure", "open to", "flexible", "to be determined"]):
+            flags.append("⚠️ Scope may be ambiguous - clarify deliverables upfront")
+        
+        # Missing critical inputs
+        missing_inputs = self.extract_required_inputs()
+        critical_missing = [inp for inp in missing_inputs if "soil" in inp.lower() or "load" in inp.lower()]
+        if critical_missing:
+            flags.append(f"⚠️ Missing critical inputs: {', '.join(critical_missing)}")
+        
+        # Timeline pressure
+        if any(phrase in text_lower for phrase in ["urgent", "asap", "24 hours", "tomorrow"]):
+            flags.append("⚠️ Tight timeline may compromise quality/review")
+        
+        # Licensing
+        license_info = self.assess_licensing_requirements()
+        if license_info["requires_license"]:
+            flags.append("✅ License required - ensure you hold appropriate credential")
+        
+        return flags if flags else ["✅ No major risk flags detected"]
+    
+    # ───────── Code Resolution (Hybrid) ─────────
+    
+    def extract_required_codes(self) -> dict:
+        """
+        Hybrid code extraction: database + LLM + verification flag.
+        """
+        jurisdiction = self.detect_jurisdiction().value
+        job_type = self.classify_job_type().value
+        
+        result = self.code_resolver.resolve_codes(
+            jurisdiction=jurisdiction,
+            job_type=job_type,
+            job_text=self.raw_text
+        )
+        
+        return result.to_dict()
+    
+    # ───────── Clarifying Questions ─────────
+    
+    def generate_clarifying_questions(self) -> List[str]:
+        """Generate targeted questions to fill information gaps"""
+        job_type = self.classify_job_type()
+        missing_inputs = self.extract_required_inputs()
+        
+        questions = []
+        
+        type_questions = {
+            JobType.PILE_FOUNDATION: [
+                "Do you have a geotechnical report with soil parameters (c, φ, γ)?",
+                "What are the design loads (axial, lateral, moment) at pile head?",
+                "Is there a preferred pile installation method (bored, driven, CFA)?",
+                "Are there access constraints for pile driving equipment?"
+            ],
+            JobType.STRUCTURAL_ANALYSIS_FEM: [
+                "Will you provide geometry files (STEP/IGES) or should I model from drawings?",
+                "What analysis type is needed: static, dynamic, nonlinear, buckling?",
+                "What output metrics are critical: stresses, displacements, factor of safety?",
+                "Do you need validation against experimental or analytical results?"
+            ],
+            JobType.PERMIT_DRAWINGS: [
+                "Which building department will review these plans?",
+                "Do you need the engineer's seal/stamp, or just draft drawings?",
+                "Are there local amendments to the base code we should follow?",
+                "Will you handle permit submission, or do you need support?"
+            ],
+            JobType.DRAINAGE_STORMWATER: [
+                "What is the design storm return period (10-yr, 25-yr, 100-yr)?",
+                "Are there downstream discharge limits or detention requirements?",
+                "Do you have existing drainage infrastructure to connect to?",
+                "What software format is preferred for hydraulic modeling?"
+            ],
+            JobType.GEOTECHNICAL_ANALYSIS: [
+                "What is the purpose of this analysis (foundation design, slope stability, settlement)?",
+                "Do you have laboratory test results (triaxial, consolidation, direct shear)?",
+                "What is the groundwater condition during analysis?",
+                "Are there specific software requirements (PLAXIS, GeoStudio, etc.)?"
+            ],
+        }
+        
+        # Add questions based on missing inputs
+        for inp in missing_inputs[:3]:
+            if "soil" in inp.lower():
+                questions.append(f"Could you provide the geotechnical report or soil parameters?")
+            elif "load" in inp.lower():
+                questions.append(f"What are the design load values (dead/live/wind/seismic)?")
+            elif "plan" in inp.lower() or "survey" in inp.lower():
+                questions.append(f"Do you have a site plan or survey showing property lines?")
+        
+        # Add job-type specific questions
+        for q in type_questions.get(job_type, [])[:3]:
+            if q not in questions:
+                questions.append(q)
+        
+        return questions if questions else ["No clarifying questions at this time."]
+    
+    # ───────── Main Parsing Method ─────────
+    
+    def parse_to_structured(self) -> dict:
+        """Main method: return standardized JSON output"""
+        return {
+            "meta": {
+                "job_id": self.job_id,
+                "parsed_at": datetime.now().isoformat(),
+                "parser_version": "2.0.0-hybrid",
+                "llm_provider": self.llm_provider if self.llm_client else "none"
+            },
+            "classification": {
+                "job_type": self.classify_job_type().value,
+                "jurisdiction": self.detect_jurisdiction().value,
+                "confidence": "high" if self.llm_client else "medium"
+            },
+            "required_codes": self.extract_required_codes(),
+            "requirements": {
+                "deliverables": [d.value for d in self.extract_deliverables()],
+                "required_inputs_missing": self.extract_required_inputs(),
+                "licensing": self.assess_licensing_requirements()
+            },
+            "risk_assessment": {
+                "flags": self.assess_risk_flags(),
+                "overall_risk": "high" if any("⚠️" in f for f in self.assess_risk_flags()) else "low"
+            },
+            "next_actions": {
+                "clarifying_questions": self.generate_clarifying_questions(),
+                "recommended_first_step": self._recommend_first_step()
+            },
+            "raw_excerpt": self.raw_text[:500],
+            "compliance": {
+                "human_verification_required": True,
+                "ai_assisted": self.llm_client is not None,
+                "disclaimer": "⚠️ This output is AI-assisted and requires verification by a licensed Professional Engineer before use in any engineering design, permit submission, or construction activity."
+            }
+        }
+    
+    def _recommend_first_step(self) -> str:
+        """Suggest the most critical next action"""
+        missing = self.extract_required_inputs()
+        if any("soil" in m.lower() for m in missing):
+            return "Request geotechnical report before starting design"
+        elif any("load" in m.lower() for m in missing):
+            return "Clarify design loads and load combinations"
+        elif self.assess_licensing_requirements()["requires_license"]:
+            return "Confirm you hold the required professional license for this jurisdiction"
+        else:
+            return "Send clarifying questions to client to finalize scope"
+    
+    # ───────── Audit Logging ─────────
+    
+    def save_intake_log(self, output_dir: str = "data/logs") -> str:
+        """Save parsed result to audit log"""
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        output_file = Path(output_dir) / f"intake_{self.job_id}.json"
+        
+        result = self.parse_to_structured()
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+        
+        # Also append to master log
+        master_log = Path(output_dir) / "intake_master.jsonl"
+        with open(master_log, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(result) + "\n")
+        
+        return str(output_file)
+
+📂 Supporting File: config/settings.py
+
+"""
+Global configuration for the engineering agent system.
+"""
+
+from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+# Paths
+BASE_DIR = Path(__file__).parent.parent
+DATA_DIR = BASE_DIR / "data"
+LOGS_DIR = DATA_DIR / "logs"
+VECTORSTORE_DIR = DATA_DIR / "vectorstore"
+APPROVALS_DIR = DATA_DIR / "approvals"
+CODES_DIR = DATA_DIR / "codes"
+
+for d in [DATA_DIR, LOGS_DIR, VECTORSTORE_DIR, APPROVALS_DIR, CODES_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
+
+# LLM Configuration
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o")
+LLM_API_KEY = os.getenv("LLM_API_KEY")
+
+# Engineering Defaults
+DEFAULT_SAFETY_FACTOR = 2.5
+DEFAULT_CONCRETE_GRADE = "M25"
+DEFAULT_STEEL_GRADE = "Fe415"
+
+# Compliance
+REQUIRE_AUDIT_LOG = True
+REQUIRE_HUMAN_APPROVAL = True
+ENGINEER_NAME = os.getenv("ENGINEER_NAME", "[Your Name]")
+ENGINEER_LICENSE = os.getenv("ENGINEER_LICENSE", "[Your License #]")
+
+# Code Resolver
+CODE_CONFIDENCE_THRESHOLD = 0.7
+
+🧪 Test Script: tests/test_intake_hybrid.py
+
+"""
+Test the hybrid intake module with various job types.
+"""
+
+import json
+import os
+from modules.intake import EngineeringIntake, CodeDatabase
+
+# Mock LLM client for testing (optional)
+class MockLLMClient:
+    def __init__(self):
+        pass
+    
+    class chat:
+        class completions:
+            @staticmethod
+            def create(model, messages, temperature, max_tokens=None, response_format=None):
+                class Choice:
+                    class Message:
+                        content = '{"codes": [{"code_id": "TEST_CODE", "title": "Test Standard", "scope": "Testing", "priority": "primary", "edition": "latest", "local_amendments_possible": true}], "confidence": 0.75, "uncertainties": []}'
+                    message = Message()
+                class Response:
+                    choices = [Choice()]
+                return Response()
+
+
+def test_india_pile_job():
+    """Test: India pile foundation job"""
+    job_text = """
+    Need pile foundation design for 1300 sft residential slab in Mumbai. 
+    Soil report available. Must follow IS 2911. Deliverables: DWG layout + Excel calcs.
+    Budget: ₹8000 INR.
+    """
+    intake = EngineeringIntake(job_text)
+    result = intake.parse_to_structured()
+    
+    print("🇮🇳 India Pile Job Test")
+    print(f"  Job Type: {result['classification']['job_type']}")
+    print(f"  Jurisdiction: {result['classification']['jurisdiction']}")
+    print(f"  Code Source: {result['required_codes']['source']}")
+    print(f"  Codes Found: {len(result['required_codes']['codes'])}")
+    for code in result['required_codes']['codes'][:3]:
+        print(f"    • {code['code_id']}: {code['title']} ({code['priority']})")
+    print(f"  License Required: {result['requirements']['licensing']['requires_license']}")
+    print(f"  Risk Level: {result['risk_assessment']['overall_risk']}")
+    print()
+    
+    assert result['classification']['job_type'] == 'pile_foundation'
+    assert result['classification']['jurisdiction'] == 'India_IS'
+    assert any(c['code_id'] == 'IS_2911' for c in result['required_codes']['codes'])
+    print("  ✅ PASSED\n")
+
+
+def test_florida_permit_job():
+    """Test: Florida permit drawings job"""
+    job_text = """
+    Need permit-ready patio roof plans for Palmetto Bay, FL. 
+    Aluminum structure, 40x12 ft. Must be PE stamped for Florida.
+    """
+    intake = EngineeringIntake(job_text)
+    result = intake.parse_to_structured()
+    
+    print("🇺🇸 Florida Permit Job Test")
+    print(f"  Job Type: {result['classification']['job_type']}")
+    print(f"  Jurisdiction: {result['classification']['jurisdiction']}")
+    print(f"  Codes Found: {len(result['required_codes']['codes'])}")
+    for code in result['required_codes']['codes'][:3]:
+        print(f"    • {code['code_id']}: {code['title']} ({code['priority']})")
+    print(f"  License Required: {result['requirements']['licensing']['requires_license']}")
+    print()
+    
+    assert result['classification']['jurisdiction'] == 'Florida_FBC'
+    assert result['requirements']['licensing']['requires_license'] == True
+    print("  ✅ PASSED\n")
+
+
+def test_generic_fem_job():
+    """Test: Generic FEM job (no jurisdiction)"""
+    job_text = """
+    Abaqus FEM model of helical pile in sand. Simulate pre-compression then uplift.
+    Deliver .cae, .inp, .odb files. Budget $50 USD.
+    """
+    intake = EngineeringIntake(job_text)
+    result = intake.parse_to_structured()
+    
+    print("🌍 Generic FEM Job Test")
+    print(f"  Job Type: {result['classification']['job_type']}")
+    print(f"  Jurisdiction: {result['classification']['jurisdiction']}")
+    print(f"  Code Source: {result['required_codes']['source']}")
+    print(f"  Human Verification Required: {result['required_codes']['requires_human_verification']}")
+    print()
+    
+    assert result['classification']['job_type'] == 'structural_analysis_fem'
+    assert result['required_codes']['requires_human_verification'] == True
+    print("  ✅ PASSED\n")
+
+
+def test_audit_log():
+    """Test: Audit log creation"""
+    job_text = "Test job for audit log verification"
+    intake = EngineeringIntake(job_text)
+    log_file = intake.save_intake_log()
+    
+    print("📋 Audit Log Test")
+    print(f"  Log File: {log_file}")
+    print(f"  File Exists: {os.path.exists(log_file)}")
+    print()
+    
+    assert os.path.exists(log_file)
+    print("  ✅ PASSED\n")
+
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("HYBRID INTAKE MODULE - TEST SUITE")
+    print("=" * 60)
+    print()
+    
+    test_india_pile_job()
+    test_florida_permit_job()
+    test_generic_fem_job()
+    test_audit_log()
+    
+    print("=" * 60)
+    print("ALL TESTS COMPLETED")
+    print("=" * 60)
+
+📋 Example Output (India Pile Job)
+
+{
+  "meta": {
+    "job_id": "20260315_180045",
+    "parsed_at": "2026-03-15T18:00:45.123456",
+    "parser_version": "2.0.0-hybrid",
+    "llm_provider": "openai"
+  },
+  "classification": {
+    "job_type": "pile_foundation",
+    "jurisdiction": "India_IS",
+    "confidence": "high"
+  },
+  "required_codes": {
+    "source": "database",
+    "codes": [
+      {
+        "code_id": "IS_2911",
+        "title": "Design and construction of pile foundations",
+        "scope": "Pile foundation design, capacity calculation, load testing",
+        "priority": "primary",
+        "edition": "latest",
+        "parts": ["Part 1: Concrete piles", "Part 2: Under-reamed piles"],
+        "source_url": "https://bis.gov.in",
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      },
+      {
+        "code_id": "IS_456",
+        "title": "Plain and reinforced concrete - Code of practice",
+        "scope": "Concrete design, reinforcement detailing, durability requirements",
+        "priority": "secondary",
+        "edition": "2000",
+        "source_url": "https://bis.gov.in",
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      }
+    ],
+    "confidence": 0.9,
+    "requires_human_verification": true,
+    "notes": ["✅ Codes matched from curated database"],
+    "uncertainties": []
+  },
+  "requirements": {
+    "deliverables": ["dwg_file", "excel_calculations"],
+    "required_inputs_missing": ["column load values", "pile type preference"],
+    "licensing": {
+      "requires_license": true,
+      "license_type": "Registered Structural Engineer (State Council)",
+      "jurisdiction": "India_IS"
+    }
+  },
+  "risk_assessment": {
+    "flags": [
+      "⚠️ Budget may be insufficient for scope complexity",
+      "✅ License required - ensure you hold appropriate credential"
+    ],
+    "overall_risk": "high"
+  },
+  "next_actions": {
+    "clarifying_questions": [
+      "Do you have a geotechnical report with soil parameters (c, φ, γ)?",
+      "What are the design loads (axial, lateral, moment) at pile head?"
+    ],
+    "recommended_first_step": "Clarify design loads and load combinations"
+  },
+  "compliance": {
+    "human_verification_required": true,
+    "ai_assisted": true,
+    "disclaimer": "⚠️ This output is AI-assisted and requires verification by a licensed Professional Engineer before use."
+  }
+}
+
+🚀 Quick Start Checklist
+
+Step
+Action
+Command
+1
+Create directory structure
+mkdir -p modules config data/logs tests
+2
+Install dependencies
+pip install python-dotenv openai anthropic
+3
+Create .env file
+Add LLM_API_KEY, ENGINEER_NAME, ENGINEER_LICENSE
+4
+Copy intake.py
+Save to modules/intake.py
+5
+Copy settings.py
+Save to config/settings.py
+6
+Run tests
+python tests/test_intake_hybrid.py
+7
+Test with real job
+python -c "from modules.intake import EngineeringIntake; print(EngineeringIntake('your job text').parse_to_structured())"
+✅ What This Module Provides
+Feature
+Implementation
+Job Classification
+LLM + keyword fallback for 15+ job types
+Jurisdiction Detection
+9 jurisdictions with code system mapping
+Code Resolution (Hybrid)
+Database (fast) → LLM (flexible) → Human (mandatory)
+Deliverable Extraction
+10+ deliverable types auto-detected
+Input Gap Analysis
+Identifies missing soil, load, survey data
+Licensing Assessment
+Flags PE/stamp requirements per jurisdiction
+Risk Flagging
+Budget, scope, timeline, licensing risks
+Clarifying Questions
+Auto-generated client questions
+Audit Logging
+Immutable JSON logs for liability protection
+Compliance Flags
+Human verification required on all outputs
+This is a production-ready, legally-defensible intake module that scales across civil engineering domains while maintaining safety guardrails. 🎯

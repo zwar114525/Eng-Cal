@@ -1,0 +1,148 @@
+{
+  "meta": {
+    "job_id": "20260315_145305",
+    "parsed_at": "2026-03-15T14:53:05.978151",
+    "parser_version": "2.0.0",
+    "llm_provider": "none"
+  },
+  "classification": {
+    "job_type": "pile_foundation",
+    "jurisdiction": "India_IS",
+    "confidence": "medium"
+  },
+  "required_codes": {
+    "source": "database",
+    "codes": [
+      {
+        "code_id": "IS_2911",
+        "title": "Design and construction of pile foundations",
+        "scope": "Pile foundation design, capacity calculation, load testing",
+        "priority": "primary",
+        "edition": "latest",
+        "parts": [
+          "Part 1: Concrete piles",
+          "Part 2: Under-reamed piles",
+          "Part 3: Prestressed concrete piles",
+          "Part 4: Load test on piles"
+        ],
+        "source_url": "https://bis.gov.in",
+        "alternatives": [],
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      },
+      {
+        "code_id": "IS_456",
+        "title": "Plain and reinforced concrete - Code of practice",
+        "scope": "Concrete design, reinforcement detailing, durability requirements",
+        "priority": "secondary",
+        "edition": "2000",
+        "parts": [],
+        "source_url": "https://bis.gov.in",
+        "alternatives": [],
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      },
+      {
+        "code_id": "IS_875",
+        "title": "Code of practice for design loads (other than earthquake)",
+        "scope": "Dead, live, wind, snow load calculations",
+        "priority": "secondary",
+        "edition": "latest",
+        "parts": [
+          "Part 1: Dead loads",
+          "Part 2: Imposed loads",
+          "Part 3: Wind loads",
+          "Part 4: Snow loads"
+        ],
+        "source_url": "https://bis.gov.in",
+        "alternatives": [],
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      },
+      {
+        "code_id": "IS_1893",
+        "title": "Criteria for earthquake resistant design of structures",
+        "scope": "Seismic design forces, ductility requirements",
+        "priority": "tertiary",
+        "edition": "latest",
+        "parts": [
+          "Part 1: General provisions",
+          "Part 2: Liquid retaining tanks"
+        ],
+        "source_url": "https://bis.gov.in",
+        "alternatives": [],
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      },
+      {
+        "code_id": "IS_1498",
+        "title": "Classification and identification of soils for general engineering purposes",
+        "scope": "Soil classification, index properties",
+        "priority": "tertiary",
+        "edition": "latest",
+        "parts": [],
+        "source_url": "https://bis.gov.in",
+        "alternatives": [],
+        "local_amendments_possible": true,
+        "source": "database",
+        "requires_verification": true
+      }
+    ],
+    "confidence": 0.9,
+    "requires_human_verification": true,
+    "notes": [
+      "Codes matched from curated database"
+    ],
+    "uncertainties": [],
+    "audit_metadata": {
+      "resolved_at": "2026-03-15T14:53:05.978241",
+      "jurisdiction_input": "India_IS",
+      "job_type_input": "pile_foundation",
+      "confidence_threshold": 0.7,
+      "llm_provider": "none"
+    }
+  },
+  "requirements": {
+    "deliverables": [
+      "other"
+    ],
+    "required_inputs_missing": [
+      "project location/address",
+      "geotechnical investigation report",
+      "column load values (dead/live/wind)",
+      "groundwater level information"
+    ],
+    "licensing": {
+      "requires_license": true,
+      "license_type": "Registered Structural Engineer (State Council)",
+      "jurisdiction": "India_IS",
+      "note": "Verify with local engineering board before bidding"
+    }
+  },
+  "risk_assessment": {
+    "flags": [
+      "Missing critical inputs: column load values (dead/live/wind)",
+      "License required - ensure you hold appropriate credential"
+    ],
+    "overall_risk": "low"
+  },
+  "next_actions": {
+    "clarifying_questions": [
+      "What are the design load values (dead/live/wind/seismic)?",
+      "Do you have a geotechnical report with soil parameters (c, phi, gamma)?",
+      "What are the design loads (axial, lateral, moment) at pile head?",
+      "Is there a preferred pile installation method (bored, driven, CFA)?"
+    ],
+    "recommended_first_step": "Clarify design loads and load combinations"
+  },
+  "raw_excerpt": "Need pile foundation design for residential building in Mumbai. Must follow IS 2911.",
+  "compliance": {
+    "human_verification_required": true,
+    "ai_assisted": false,
+    "disclaimer": "This output is AI-assisted and requires verification by a licensed Professional Engineer before use in any engineering design, permit submission, or construction activity."
+  }
+}
